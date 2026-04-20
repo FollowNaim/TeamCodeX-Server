@@ -14,7 +14,7 @@ router.use(authenticate);
 // GET /api/projects
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { status, priority, assignedUsers, title, search, sortBy = 'incomingDate', order = 'desc', page = '1', limit = '100' } = req.query;
+    const { status, priority, assignedUsers, title, search, date, sortBy = 'incomingDate', order = 'desc', page = '1', limit = '100' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     const filter: Record<string, unknown> = {};
     const isLead = req.user?.role === 'team-lead' || req.user?.role === 'co-lead';
@@ -44,17 +44,25 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       ];
     }
     
-    const { month, startDate, endDate, dateField = 'createdAt' } = req.query;
-    if (startDate || endDate) {
-      const dateQuery: Record<string, unknown> = {};
-      if (startDate) dateQuery.$gte = new Date(startDate as string);
-      if (endDate) dateQuery.$lte = new Date(endDate as string);
-      filter[dateField as string] = dateQuery;
-    } else if (month) {
+    const { month } = req.query;
+    if (month) {
       const year = new Date().getFullYear();
       const start = new Date(year, Number(month) - 1, 1);
       const end = new Date(year, Number(month), 0);
       filter.createdAt = { $gte: start, $lte: end };
+    }
+
+    if (date) {
+      const start = new Date(date as string);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date as string);
+      end.setHours(23, 59, 59, 999);
+      
+      if (status === 'Delivered') {
+        filter.deliveredAt = { $gte: start, $lte: end };
+      } else {
+        filter.incomingDate = { $gte: start, $lte: end };
+      }
     }
 
     const projects = await Project.find(filter)
@@ -91,7 +99,10 @@ router.post('/', authorize('team-lead', 'co-lead'), auditLogger('project.create'
       clientId = client._id;
     }
 
-    const project = await Project.create({ ...rest, clientId, createdBy: req.user?.id });
+    const payload = { ...rest, clientId, createdBy: req.user?.id };
+    if (payload.status === 'Delivered') payload.deliveredAt = new Date();
+
+    const project = await Project.create(payload);
     const populated = await project.populate(['clientId', 'assignedUsers']);
     res.status(201).json(populated);
   } catch (err: unknown) {
@@ -138,7 +149,7 @@ router.post('/import', authorize('team-lead', 'co-lead'), async (req: AuthReques
         );
         clientId = client._id;
       }
-      const project = await Project.create({ 
+      const projectPayload: any = { 
         ...rest, 
         title, 
         profileName, 
@@ -146,7 +157,10 @@ router.post('/import', authorize('team-lead', 'co-lead'), async (req: AuthReques
         assignedUsers: usersToAssign,
         clientId, 
         createdBy: req.user?.id 
-      });
+      };
+      if (projectPayload.status === 'Delivered') projectPayload.deliveredAt = new Date();
+
+      const project = await Project.create(projectPayload);
       imported.push(project);
     }
     res.status(201).json({ message: `Successfully imported ${imported.length} projects`, count: imported.length });

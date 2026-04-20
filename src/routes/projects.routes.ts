@@ -14,7 +14,8 @@ router.use(authenticate);
 // GET /api/projects
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { status, priority, assignedUsers, title, search, sortBy = 'incomingDate', order = 'desc' } = req.query;
+    const { status, priority, assignedUsers, title, search, sortBy = 'incomingDate', order = 'desc', page = '1', limit = '100' } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
     const filter: Record<string, unknown> = {};
     const isLead = req.user?.role === 'team-lead' || req.user?.role === 'co-lead';
     if (!isLead) {
@@ -52,9 +53,18 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       .populate('clientId', 'name email')
       .populate('assignedUsers', 'name avatar role')
       .sort({ [sortBy as string]: order === 'asc' ? 1 : -1 })
+      .skip(skip)
+      .limit(Number(limit))
       .lean();
 
-    res.json(projects);
+    const total = await Project.countDocuments(filter);
+
+    res.json({
+      projects,
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / Number(limit))
+    });
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 

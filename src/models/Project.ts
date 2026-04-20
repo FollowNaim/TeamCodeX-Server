@@ -15,7 +15,7 @@ export interface IProject extends Document {
   price: number;
   currency: 'USD' | 'EUR' | 'BDT';
   deadline: Date;
-  status: 'WIP' | 'Delivered' | 'Revision' | 'Cancelled';
+  status: 'WIP' | 'Delivered' | 'Revision' | 'Cancelled' | 'Hold';
   assignedUsers: Types.ObjectId[];
   tags: string[];
   priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -53,7 +53,7 @@ const projectSchema = new Schema<IProject>(
     price: { type: Number, default: 0 },
     currency: { type: String, enum: ['USD', 'EUR', 'BDT'], default: 'USD' },
     deadline: { type: Date, required: true },
-    status: { type: String, enum: ['WIP', 'Delivered', 'Revision', 'Cancelled'], default: 'WIP' },
+    status: { type: String, enum: ['WIP', 'Delivered', 'Revision', 'Cancelled', 'Hold'], default: 'WIP' },
     assignedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     tags: [String],
     priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },

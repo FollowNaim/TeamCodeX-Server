@@ -1,12 +1,11 @@
-import mongoose, { Document, Schema, Types } from 'mongoose';
+import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 export interface IUser extends Document {
   name: string;
   email: string;
   passwordHash: string;
-  role: 'ops-manager' | 'team-lead' | 'co-lead' | 'member';
-  teamId?: Types.ObjectId;
+  role: 'team-lead' | 'co-lead' | 'member';
   avatar: string;
   skills: string[];
   badges: string[];
@@ -20,8 +19,7 @@ const userSchema = new Schema<IUser>(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['ops-manager', 'team-lead', 'co-lead', 'member'], default: 'member' },
-    teamId: { type: Schema.Types.ObjectId, ref: 'Team', default: null },
+    role: { type: String, enum: ['team-lead', 'co-lead', 'member'], default: 'member' },
     avatar: { type: String, default: '' },
     skills: [{ type: String }],
     badges: [{ type: String }],

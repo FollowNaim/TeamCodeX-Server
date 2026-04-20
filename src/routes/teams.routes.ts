@@ -2,10 +2,9 @@ import { Router, Response } from 'express';
 import { Team } from '../models/Team';
 import { User } from '../models/User';
 import { Project } from '../models/Project';
-import { Permission } from '../models/Permission';
 import { authenticate, AuthRequest } from '../middleware/authenticate';
 import { requireOpsManager, requireLeadership, isOpsManager } from '../middleware/authorize';
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 
 const router = Router();
 router.use(authenticate);
@@ -63,9 +62,10 @@ router.get('/:id/stats', requireOpsManager(), async (req: AuthRequest, res: Resp
   try {
     const team = await Team.findById(req.params.id);
     if (!team) { res.status(404).json({ error: 'Team not found' }); return; }
-    const allMemberIds = [team.leaderId, ...team.coLeaderIds, ...team.memberIds].filter(Boolean);
+    const allMemberIds = [team.leaderId, ...team.coLeaderIds, ...team.memberIds]
+      .filter((id): id is Types.ObjectId => !!id);
 
-    const projects = await Project.find({ assignedUsers: { $in: allMemberIds } });
+    const projects = await Project.find({ assignedUsers: { $in: allMemberIds } } as any);
     const delivered = projects.filter(p => p.status === 'Delivered');
     const wip = projects.filter(p => p.status === 'WIP');
     const totalRevenue = delivered.reduce((s, p) => s + (p.price * 0.8), 0);
@@ -95,8 +95,8 @@ router.post('/', requireOpsManager(), async (req: AuthRequest, res: Response): P
     const team = await Team.create({ name, description: description || '', leaderId, coLeaderIds: coLeaderIds || [], memberIds: memberIds || [] });
 
     // Assign teamId on all referenced users
-    const allIds = [leaderId, ...(coLeaderIds || []), ...(memberIds || [])].filter(Boolean);
-    if (allIds.length) await User.updateMany({ _id: { $in: allIds } }, { teamId: team._id });
+    const allIds = [leaderId, ...(coLeaderIds || []), ...(memberIds || [])].filter(Boolean) as mongoose.Types.ObjectId[];
+    if (allIds.length) await User.updateMany({ _id: { $in: allIds } } as any, { teamId: team._id });
     if (leaderId) await User.findByIdAndUpdate(leaderId, { role: 'team-lead' });
 
     const populated = await team.populate([
@@ -210,8 +210,9 @@ router.get('/all/stats', requireOpsManager(), async (_req, res: Response): Promi
   try {
     const teams = await Team.find({ isActive: true });
     const teamStats = await Promise.all(teams.map(async team => {
-      const allMemberIds = [team.leaderId, ...team.coLeaderIds, ...team.memberIds].filter(Boolean);
-      const projects = await Project.find({ assignedUsers: { $in: allMemberIds } });
+      const allMemberIds = [team.leaderId, ...team.coLeaderIds, ...team.memberIds]
+        .filter((id): id is Types.ObjectId => !!id);
+      const projects = await Project.find({ assignedUsers: { $in: allMemberIds } } as any);
       const delivered = projects.filter(p => p.status === 'Delivered');
       return {
         teamId: team._id,

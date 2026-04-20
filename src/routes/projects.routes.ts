@@ -64,7 +64,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       filter.createdAt = { $gte: new Date(year, Number(month) - 1, 1), $lte: new Date(year, Number(month), 0) };
     }
 
-    const projects = await Project.find(filter)
+    const projects = await Project.find(filter as any)
       .populate('clientId', 'name email')
       .populate('assignedUsers', 'name avatar role')
       .sort({ [sortBy as string]: order === 'asc' ? 1 : -1 })
@@ -72,7 +72,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       .limit(Number(limit))
       .lean();
 
-    const total = await Project.countDocuments(filter);
+    const total = await Project.countDocuments(filter as any);
     res.json({ projects, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
   } catch { res.status(500).json({ error: 'Server error' }); }
 });

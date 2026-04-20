@@ -80,7 +80,7 @@ router.get('/:id/stats', async (req: AuthRequest, res: Response): Promise<void> 
       res.status(403).json({ error: 'Forbidden' }); return;
     }
     const userId = req.params.id;
-    const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) });
+    const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) } as any);
     const delivered = projects.filter(p => p.status === 'Delivered');
     const wipProjects = projects.filter(p => p.status === 'WIP');
     const totalRevenue = delivered.reduce((sum, p) => {
@@ -115,7 +115,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
     if (name) user.name = name;
     if (avatar !== undefined) user.avatar = avatar;
-    if (skills) user.skills = skills;
+    if (skills) user.skills = Array.isArray(skills) ? skills : [skills];
 
     if (canAdmin) {
       if (role && !isSelf) user.role = role;

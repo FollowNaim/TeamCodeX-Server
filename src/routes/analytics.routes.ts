@@ -34,7 +34,7 @@ const buildRoleFilter = async (req: AuthRequest): Promise<Record<string, any>> =
   if (role === 'ops-manager') return {};
   const me = await User.findById(req.user?.id).select('teamId');
   if (role === 'team-lead' || role === 'co-lead') {
-    if (!me?.teamId) return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id) };
+    if (!me?.teamId) return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id) } as any;
     const members = await User.find({ teamId: me.teamId }).select('_id');
     return { assignedUsers: { $in: members.map(m => m._id) } };
   }
@@ -47,14 +47,14 @@ const buildRoleFilter = async (req: AuthRequest): Promise<Record<string, any>> =
     }
   }
   // default member: self only
-  return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id) };
+  return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id) } as any;
 };
 
 router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const matchFilter = await buildRoleFilter(req);
     const [projects, users] = await Promise.all([
-      Project.find(matchFilter),
+      Project.find(matchFilter as any),
       User.countDocuments({ isActive: true }),
     ]);
     const delivered = projects.filter(p => p.status === 'Delivered');
@@ -70,7 +70,7 @@ router.get('/team-breakdown', async (req: AuthRequest, res: Response): Promise<v
   try {
     const matchFilter = await buildRoleFilter(req);
     const data = await Project.aggregate([
-      { $match: matchFilter },
+      { $match: matchFilter as any },
       { $addFields: { memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } } },
       { $unwind: '$assignedUsers' },
       { $group: { _id: { user: '$assignedUsers', status: '$status' }, count: { $sum: 1 }, value: { $sum: { $divide: [{ $cond: [{ $eq: ['$status', 'WIP'] }, '$deliveryAmount', { $multiply: ['$price', 0.8] }] }, '$memberCount'] } } } },
@@ -87,7 +87,7 @@ router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
     if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
-    const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) });
+    const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) } as any);
     const delivered = projects.filter(p => p.status === 'Delivered');
     const totalRevenue = delivered.reduce((sum, p) => sum + ((p.price * 0.8) / (p.assignedUsers.length || 1)), 0);
     const wipProjects = projects.filter(p => p.status === 'WIP');
@@ -102,7 +102,7 @@ router.get('/leaderboard', async (req: AuthRequest, res: Response): Promise<void
   try {
     const matchFilter = await buildRoleFilter(req);
     const leaderboard = await Project.aggregate([
-      { $match: { ...matchFilter, status: 'Delivered' } },
+      { $match: { ...(matchFilter as any), status: 'Delivered' } },
       { $addFields: { memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } } },
       { $unwind: '$assignedUsers' },
       { $group: { _id: '$assignedUsers', projectsDelivered: { $sum: 1 }, totalRevenue: { $sum: { $divide: [{ $multiply: ['$price', 0.8] }, '$memberCount'] } } } },
@@ -118,7 +118,7 @@ router.get('/leaderboard', async (req: AuthRequest, res: Response): Promise<void
 router.get('/projects/status', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const matchFilter = await buildRoleFilter(req);
-    const data = await Project.aggregate([{ $match: matchFilter }, { $group: { _id: '$status', count: { $sum: 1 }, revenue: { $sum: { $multiply: ['$price', 0.8] } } } }]);
+    const data = await Project.aggregate([{ $match: matchFilter as any }, { $group: { _id: '$status', count: { $sum: 1 }, revenue: { $sum: { $multiply: ['$price', 0.8] } } } }]);
     res.json(data);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
@@ -126,7 +126,7 @@ router.get('/projects/status', async (req: AuthRequest, res: Response): Promise<
 router.get('/projects/profile', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const matchFilter = await buildRoleFilter(req);
-    const data = await Project.aggregate([{ $match: matchFilter }, { $group: { _id: '$profileName', count: { $sum: 1 }, revenue: { $sum: { $multiply: ['$price', 0.8] } } } }, { $sort: { revenue: -1 } }]);
+    const data = await Project.aggregate([{ $match: matchFilter as any }, { $group: { _id: '$profileName', count: { $sum: 1 }, revenue: { $sum: { $multiply: ['$price', 0.8] } } } }, { $sort: { revenue: -1 } }]);
     res.json(data);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
@@ -135,7 +135,7 @@ router.get('/members/performance', async (req: AuthRequest, res: Response): Prom
   try {
     const matchFilter = await buildRoleFilter(req);
     const data = await Project.aggregate([
-      { $match: matchFilter },
+      { $match: matchFilter as any },
       { $addFields: { memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } } },
       { $unwind: '$assignedUsers' },
       { $group: { _id: { user: '$assignedUsers', status: '$status' }, count: { $sum: 1 }, revenue: { $sum: { $divide: [{ $multiply: ['$price', 0.8] }, '$memberCount'] } } } },
@@ -155,7 +155,7 @@ router.get('/revenue/timeline', async (req: AuthRequest, res: Response): Promise
     since.setMonth(since.getMonth() - Number(months));
     const matchFilter = await buildRoleFilter(req);
     const data = await Project.aggregate([
-      { $match: { ...matchFilter, status: 'Delivered', deliveredAt: { $gte: since } } },
+      { $match: { ...(matchFilter as any), status: 'Delivered', deliveredAt: { $gte: since } } },
       { $group: { _id: { year: { $year: '$deliveredAt' }, month: { $month: '$deliveredAt' } }, revenue: { $sum: { $multiply: ['$price', 0.8] } }, count: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]);
@@ -175,8 +175,8 @@ router.get('/teams', requireOpsManager(), async (_req, res: Response): Promise<v
   try {
     const teams = await Team.find({ isActive: true });
     const teamStats = await Promise.all(teams.map(async team => {
-      const allMemberIds = [team.leaderId, ...team.coLeaderIds, ...team.memberIds].filter(Boolean);
-      const projects = await Project.find({ assignedUsers: { $in: allMemberIds } });
+      const allMemberIds = [team.leaderId, ...team.coLeaderIds, ...team.memberIds].filter(Boolean) as mongoose.Types.ObjectId[];
+      const projects = await Project.find({ assignedUsers: { $in: allMemberIds } } as any);
       const delivered = projects.filter(p => p.status === 'Delivered');
       return {
         teamId: team._id, teamName: team.name, memberCount: allMemberIds.length,

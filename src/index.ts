@@ -16,6 +16,8 @@ import noticeRoutes from './routes/notices.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import auditRoutes from './routes/audit.routes';
 import chatRoutes from './routes/chat.routes';
+import teamRoutes from './routes/teams.routes';
+import permissionRoutes from './routes/permissions.routes';
 import { errorHandler } from './middleware/errorHandler';
 import { setupSocketIO } from './services/socket';
 
@@ -23,11 +25,11 @@ const app = express();
 app.set('trust proxy', 1);
 
 // 1. CORS (MUST BE FIRST)
-app.use(cors({ 
-  origin: true, 
+app.use(cors({
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 // 2. DEBUG LOGGER
@@ -38,7 +40,7 @@ app.use((req, _res, next) => {
 
 const server = http.createServer(app);
 const io = new SocketServer(server, {
-  cors: { origin: env.CLIENT_URL, credentials: true }
+  cors: { origin: env.CLIENT_URL, credentials: true },
 });
 
 setupSocketIO(io);
@@ -57,6 +59,8 @@ app.use('/api/notices', noticeRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/teams', teamRoutes);
+app.use('/api/permissions', permissionRoutes);
 
 app.get('/', (_req, res) => res.send('🚀 TeamCodeX API is running...'));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));

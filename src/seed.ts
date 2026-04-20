@@ -1,9 +1,8 @@
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { User } from './models/User';
+import mongoose from 'mongoose';
 import { Client } from './models/Client';
 import { Project } from './models/Project';
+import { User } from './models/User';
 
 dotenv.config();
 
@@ -46,7 +45,7 @@ const seed = async () => {
   } catch (error) {
     console.error('Seeding failed', error);
     process.exit(1);
-  }
+  } 
 };
 
 seed();

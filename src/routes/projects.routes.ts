@@ -25,10 +25,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       const { isBazuka } = req.query;
       if (isBazuka === 'true') filter.isBazuka = true;
     }
-    if (status) filter.status = status;
-    if (priority) filter.priority = priority;
-    if (title) filter.title = title;
-    if (assignedUsers) filter.assignedUsers = new mongoose.Types.ObjectId(assignedUsers as string);
+    if (status && status !== '') filter.status = status;
+    if (priority && priority !== '') filter.priority = priority;
+    if (title && title !== '') filter.title = title;
+    
+    if (assignedUsers && assignedUsers !== '') {
+      filter.assignedUsers = new mongoose.Types.ObjectId(assignedUsers as string);
+    }
     
     if (search) {
       const searchStr = search as string;

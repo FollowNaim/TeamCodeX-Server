@@ -21,6 +21,21 @@ import { setupSocketIO } from './services/socket';
 
 const app = express();
 app.set('trust proxy', 1);
+
+// 1. CORS (MUST BE FIRST)
+app.use(cors({ 
+  origin: true, 
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// 2. DEBUG LOGGER
+app.use((req, _res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+  next();
+});
+
 const server = http.createServer(app);
 const io = new SocketServer(server, {
   cors: { origin: env.CLIENT_URL, credentials: true }
@@ -28,24 +43,6 @@ const io = new SocketServer(server, {
 
 setupSocketIO(io);
 
-app.use(cors({ 
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [env.CLIENT_URL, env.CLIENT_URL.replace(/\/$/, '')];
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log('🚫 CORS Blocked Origin:', origin);
-      console.log('✅ Allowed Origins:', allowedOrigins);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 app.use(helmet());
 app.use(express.json({ limit: '10mb' }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));

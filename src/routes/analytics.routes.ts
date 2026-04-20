@@ -11,12 +11,12 @@ const router = Router();
 router.get('/public', async (_req, res: Response): Promise<void> => {
   try {
     const projectStats = await Project.aggregate([
-      { $group: { _id: null, totalProjects: { $sum: 1 }, totalRevenue: { $sum: '$price' } } }
+      { $group: { _id: null, totalProjects: { $sum: 1 }, totalRevenue: { $sum: { $multiply: ['$price', 0.8] } } } }
     ]);
     const topPerformers = await Project.aggregate([
       { $match: { status: 'Delivered' } },
       { $unwind: '$assignedUsers' },
-      { $group: { _id: '$assignedUsers', totalRevenue: { $sum: '$price' }, projectsDelivered: { $sum: 1 } } },
+      { $group: { _id: '$assignedUsers', totalRevenue: { $sum: { $multiply: ['$price', 0.8] } }, projectsDelivered: { $sum: 1 } } },
       { $sort: { totalRevenue: -1 } },
       { $limit: 3 },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
@@ -45,7 +45,7 @@ router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> =
       User.countDocuments({ isActive: true }),
     ]);
     const delivered = projects.filter(p => p.status === 'Delivered');
-    const totalRevenue = delivered.reduce((s, p) => s + p.price, 0);
+    const totalRevenue = delivered.reduce((s, p) => s + (p.price * 0.8), 0);
     const avgDeliveryMs = delivered.filter(p => p.deliveredAt).reduce((s, p) => {
       return s + (p.deliveredAt!.getTime() - p.createdAt.getTime());
     }, 0) / (delivered.length || 1);
@@ -75,7 +75,7 @@ router.get('/team-breakdown', async (_req, res: Response): Promise<void> => {
       { $group: {
         _id: { user: '$assignedUsers', status: '$status' },
         count: { $sum: 1 },
-        value: { $sum: '$deliveryAmount' }
+        value: { $sum: { $cond: [{ $eq: ['$status', 'WIP'] }, '$deliveryAmount', { $multiply: ['$price', 0.8] }] } }
       }},
       { $lookup: { from: 'users', localField: '_id.user', foreignField: '_id', as: 'user' } },
       { $unwind: '$user' },
@@ -108,7 +108,7 @@ router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
     
     const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) });
     const delivered = projects.filter(p => p.status === 'Delivered');
-    const totalRevenue = delivered.reduce((sum, p) => sum + (p.deliveryAmount || 0), 0);
+    const totalRevenue = delivered.reduce((sum, p) => sum + (p.price * 0.8), 0);
     
     const reviews = await Review.find({ submittedBy: userId, status: 'approved' });
     const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
@@ -139,7 +139,7 @@ router.get('/leaderboard', async (_req, res: Response): Promise<void> => {
       { $group: {
         _id: '$assignedUsers',
         projectsDelivered: { $sum: 1 },
-        totalRevenue: { $sum: '$deliveryAmount' },
+        totalRevenue: { $sum: { $multiply: ['$price', 0.8] } },
       }},
       { $sort: { totalRevenue: -1 } },
       { $limit: 10 },
@@ -154,7 +154,7 @@ router.get('/leaderboard', async (_req, res: Response): Promise<void> => {
 router.get('/projects/status', async (_req, res: Response): Promise<void> => {
   try {
     const data = await Project.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 }, revenue: { $sum: '$deliveryAmount' } } },
+      { $group: { _id: '$status', count: { $sum: 1 }, revenue: { $sum: { $multiply: ['$price', 0.8] } } } },
     ]);
     res.json(data);
   } catch { res.status(500).json({ error: 'Server error' }); }
@@ -166,7 +166,7 @@ router.get('/projects/profile', async (_req, res: Response): Promise<void> => {
       { $group: {
         _id: '$profileName',
         count: { $sum: 1 },
-        revenue: { $sum: '$deliveryAmount' }
+        revenue: { $sum: { $multiply: ['$price', 0.8] } }
       }},
       { $sort: { revenue: -1 } }
     ]);
@@ -181,7 +181,7 @@ router.get('/members/performance', async (_req: AuthRequest, res: Response): Pro
       { $group: {
         _id: { user: '$assignedUsers', status: '$status' },
         count: { $sum: 1 },
-        revenue: { $sum: '$deliveryAmount' }
+        revenue: { $sum: { $multiply: ['$price', 0.8] } }
       }},
       { $lookup: {
         from: 'users',
@@ -216,7 +216,7 @@ router.get('/revenue/timeline', async (req, res: Response): Promise<void> => {
       { $match: { status: 'Delivered', deliveredAt: { $gte: since } } },
       { $group: {
         _id: { year: { $year: '$deliveredAt' }, month: { $month: '$deliveredAt' } },
-        revenue: { $sum: '$deliveryAmount' },
+        revenue: { $sum: { $multiply: ['$price', 0.8] } },
         count: { $sum: 1 },
       }},
       { $sort: { '_id.year': 1, '_id.month': 1 } },

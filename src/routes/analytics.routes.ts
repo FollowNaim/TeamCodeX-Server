@@ -34,7 +34,7 @@ const buildRoleFilter = async (req: AuthRequest): Promise<Record<string, any>> =
   if (role === 'ops-manager') return {};
   const me = await User.findById(req.user?.id).select('teamId');
   if (role === 'team-lead' || role === 'co-lead') {
-    if (!me?.teamId) return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id) } as any;
+    if (!me?.teamId) return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id as string) } as any;
     const members = await User.find({ teamId: me.teamId }).select('_id');
     return { assignedUsers: { $in: members.map(m => m._id) } };
   }
@@ -47,7 +47,7 @@ const buildRoleFilter = async (req: AuthRequest): Promise<Record<string, any>> =
     }
   }
   // default member: self only
-  return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id) } as any;
+  return { assignedUsers: new mongoose.Types.ObjectId(req.user?.id as string) } as any;
 };
 
 router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -85,8 +85,7 @@ router.get('/team-breakdown', async (req: AuthRequest, res: Response): Promise<v
 
 router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
-    if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    const userId = req.user?.id as string;
     const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) } as any);
     const delivered = projects.filter(p => p.status === 'Delivered');
     const totalRevenue = delivered.reduce((sum, p) => sum + ((p.price * 0.8) / (p.assignedUsers.length || 1)), 0);

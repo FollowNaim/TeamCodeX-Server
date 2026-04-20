@@ -79,7 +79,7 @@ router.get('/:id/stats', async (req: AuthRequest, res: Response): Promise<void> 
     if (req.user?.role === 'member' && !isSelf) {
       res.status(403).json({ error: 'Forbidden' }); return;
     }
-    const userId = req.params.id;
+    const userId = req.params.id as string;
     const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) } as any);
     const delivered = projects.filter(p => p.status === 'Delivered');
     const wipProjects = projects.filter(p => p.status === 'WIP');

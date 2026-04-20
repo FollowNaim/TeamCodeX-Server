@@ -35,7 +35,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       if (isBazuka === 'true') filter.isBazuka = true;
     } else {
       // member — only their own assigned projects (no bazuka)
-      filter.assignedUsers = new mongoose.Types.ObjectId(req.user?.id);
+      filter.assignedUsers = new mongoose.Types.ObjectId(req.user?.id as string);
       filter.isBazuka = { $ne: true };
     }
 

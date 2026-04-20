@@ -44,8 +44,14 @@ router.get('/:id/stats', async (req: AuthRequest, res: Response): Promise<void> 
     const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) });
     const delivered = projects.filter(p => p.status === 'Delivered');
     const wipProjects = projects.filter(p => p.status === 'WIP');
-    const totalRevenue = delivered.reduce((sum, p) => sum + (p.deliveryAmount || 0), 0);
-    const totalWIPValue = wipProjects.reduce((sum, p) => sum + (p.deliveryAmount || 0), 0);
+    const totalRevenue = delivered.reduce((sum, p) => {
+      const count = p.assignedUsers.length || 1;
+      return sum + ((p.price * 0.8) / count);
+    }, 0);
+    const totalWIPValue = wipProjects.reduce((sum, p) => {
+      const count = p.assignedUsers.length || 1;
+      return sum + ((p.deliveryAmount || 0) / count);
+    }, 0);
     const reviews = await Review.find({ submittedBy: userId, status: 'approved' });
     const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
 

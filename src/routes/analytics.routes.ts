@@ -15,8 +15,15 @@ router.get('/public', async (_req, res: Response): Promise<void> => {
     ]);
     const topPerformers = await Project.aggregate([
       { $match: { status: 'Delivered' } },
+      { $addFields: { 
+        memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
+      }},
       { $unwind: '$assignedUsers' },
-      { $group: { _id: '$assignedUsers', totalRevenue: { $sum: { $multiply: ['$price', 0.8] } }, projectsDelivered: { $sum: 1 } } },
+      { $group: { 
+        _id: '$assignedUsers', 
+        totalRevenue: { $sum: { $divide: [{ $multiply: ['$price', 0.8] }, '$memberCount'] } }, 
+        projectsDelivered: { $sum: 1 } 
+      }},
       { $sort: { totalRevenue: -1 } },
       { $limit: 3 },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
@@ -71,11 +78,19 @@ router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> =
 router.get('/team-breakdown', async (_req, res: Response): Promise<void> => {
   try {
     const data = await Project.aggregate([
+      { $addFields: { 
+        memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
+      }},
       { $unwind: '$assignedUsers' },
       { $group: {
         _id: { user: '$assignedUsers', status: '$status' },
         count: { $sum: 1 },
-        value: { $sum: { $cond: [{ $eq: ['$status', 'WIP'] }, '$deliveryAmount', { $multiply: ['$price', 0.8] }] } }
+        value: { $sum: { 
+          $divide: [
+            { $cond: [{ $eq: ['$status', 'WIP'] }, '$deliveryAmount', { $multiply: ['$price', 0.8] }] },
+            '$memberCount'
+          ]
+        }}
       }},
       { $lookup: { from: 'users', localField: '_id.user', foreignField: '_id', as: 'user' } },
       { $unwind: '$user' },
@@ -108,13 +123,19 @@ router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
     
     const projects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) });
     const delivered = projects.filter(p => p.status === 'Delivered');
-    const totalRevenue = delivered.reduce((sum, p) => sum + (p.price * 0.8), 0);
+    const totalRevenue = delivered.reduce((sum, p) => {
+      const count = p.assignedUsers.length || 1;
+      return sum + ((p.price * 0.8) / count);
+    }, 0);
     
     const reviews = await Review.find({ submittedBy: userId, status: 'approved' });
     const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
 
     const wipProjects = projects.filter(p => p.status === 'WIP');
-    const totalWIPValue = wipProjects.reduce((sum, p) => sum + (p.deliveryAmount || 0), 0);
+    const totalWIPValue = wipProjects.reduce((sum, p) => {
+      const count = p.assignedUsers.length || 1;
+      return sum + ((p.deliveryAmount || 0) / count);
+    }, 0);
 
     res.json({
       totalProjects: projects.length,
@@ -135,11 +156,14 @@ router.get('/leaderboard', async (_req, res: Response): Promise<void> => {
   try {
     const leaderboard = await Project.aggregate([
       { $match: { status: 'Delivered' } },
+      { $addFields: { 
+        memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
+      }},
       { $unwind: '$assignedUsers' },
       { $group: {
         _id: '$assignedUsers',
         projectsDelivered: { $sum: 1 },
-        totalRevenue: { $sum: { $multiply: ['$price', 0.8] } },
+        totalRevenue: { $sum: { $divide: [{ $multiply: ['$price', 0.8] }, '$memberCount'] } },
       }},
       { $sort: { totalRevenue: -1 } },
       { $limit: 10 },
@@ -177,11 +201,16 @@ router.get('/projects/profile', async (_req, res: Response): Promise<void> => {
 router.get('/members/performance', async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const data = await Project.aggregate([
+      { $addFields: { 
+        memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
+      }},
       { $unwind: '$assignedUsers' },
       { $group: {
         _id: { user: '$assignedUsers', status: '$status' },
         count: { $sum: 1 },
-        revenue: { $sum: { $multiply: ['$price', 0.8] } }
+        revenue: { $sum: { 
+          $divide: [{ $multiply: ['$price', 0.8] }, '$memberCount']
+        }}
       }},
       { $lookup: {
         from: 'users',

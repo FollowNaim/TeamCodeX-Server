@@ -44,6 +44,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/chat', chatRoutes);
 
+app.get('/', (_req, res) => res.send('🚀 TeamCodeX API is running...'));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 app.use(errorHandler);

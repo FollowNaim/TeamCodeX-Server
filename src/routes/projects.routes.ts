@@ -44,8 +44,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       ];
     }
     
-    const { month } = req.query;
-    if (month) {
+    const { month, startDate, endDate, dateField = 'createdAt' } = req.query;
+    if (startDate || endDate) {
+      const dateQuery: Record<string, unknown> = {};
+      if (startDate) dateQuery.$gte = new Date(startDate as string);
+      if (endDate) dateQuery.$lte = new Date(endDate as string);
+      filter[dateField as string] = dateQuery;
+    } else if (month) {
       const year = new Date().getFullYear();
       const start = new Date(year, Number(month) - 1, 1);
       const end = new Date(year, Number(month), 0);

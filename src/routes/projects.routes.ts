@@ -75,9 +75,17 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 
     const total = await Project.countDocuments(filter);
 
+    // Aggregate totals for the filtered set
+    const totals = await Project.aggregate([
+      { $match: filter },
+      { $group: { _id: null, totalPrice: { $sum: '$price' }, totalDeli: { $sum: '$deliveryAmount' } } }
+    ]);
+
     res.json({
       projects,
       total,
+      totalPrice: totals[0]?.totalPrice || 0,
+      totalDeli: totals[0]?.totalDeli || 0,
       page: Number(page),
       pages: Math.ceil(total / Number(limit))
     });

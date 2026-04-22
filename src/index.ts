@@ -16,6 +16,7 @@ import noticeRoutes from './routes/notices.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import auditRoutes from './routes/audit.routes';
 import chatRoutes from './routes/chat.routes';
+import todoRoutes from './routes/todos.routes';
 import { errorHandler } from './middleware/errorHandler';
 import { setupSocketIO } from './services/socket';
 
@@ -57,6 +58,7 @@ app.use('/api/notices', noticeRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/todos', todoRoutes);
 
 app.get('/', (_req, res) => res.send('🚀 TeamCodeX API is running...'));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));

@@ -14,7 +14,7 @@ router.use(authenticate);
 // GET /api/projects
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { status, priority, assignedUsers, title, search, date, sortBy = 'incomingDate', order = 'desc', page = '1', limit = '100' } = req.query;
+    const { status, priority, assignedUsers, title, search, date, dateType = 'incoming', sortBy = 'incomingDate', order = 'desc', page = '1', limit = '100' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     const filter: Record<string, unknown> = {};
     const isLead = req.user?.role === 'team-lead' || req.user?.role === 'co-lead';
@@ -53,13 +53,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }
 
     if (date) {
-      const start = new Date(date as string);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(date as string);
-      end.setHours(23, 59, 59, 999);
+      // Split to avoid timezone shift
+      const [y, m, d] = (date as string).split('-').map(Number);
+      const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+      const end = new Date(y, m - 1, d, 23, 59, 59, 999);
       
-      if (status === 'Delivered') {
-        filter.deliveredAt = { $gte: start, $lte: end };
+      if (dateType === 'deadline') {
+        filter.deadline = { $gte: start, $lte: end };
       } else {
         filter.incomingDate = { $gte: start, $lte: end };
       }

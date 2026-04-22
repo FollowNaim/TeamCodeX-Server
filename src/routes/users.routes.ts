@@ -83,11 +83,14 @@ router.patch('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (avatar !== undefined) user.avatar = avatar;
     if (skills) user.skills = skills;
 
+    if (password && (req.user?.role === 'team-lead' || req.user?.role === 'co-lead' || req.user?.id === req.params.id)) {
+      user.passwordHash = password; // pre-save hook will hash it
+    }
+
     if (req.user?.role === 'team-lead' || req.user?.role === 'co-lead') {
       if (role) user.role = role;
       if (isActive !== undefined) user.isActive = isActive;
       if (isApproved !== undefined) user.isApproved = isApproved;
-      if (password) user.passwordHash = password; // pre-save hook will hash it
     }
 
     await user.save();

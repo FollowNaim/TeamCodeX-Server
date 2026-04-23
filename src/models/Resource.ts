@@ -6,6 +6,7 @@ export interface IResource extends Document {
   url: string;
   encryptedContent?: string;
   iv?: string;
+  credential?: string;
   category: string;
   tags: string[];
   visibleTo: 'all' | Types.ObjectId[];
@@ -17,6 +18,7 @@ const resourceSchema = new Schema<IResource>(
     title: { type: String, required: true, trim: true },
     type: { type: String, enum: ['file', 'link', 'sheet', 'credential'], required: true },
     url: { type: String, default: '' },
+    credential: { type: String, default: '' },
     encryptedContent: String,
     iv: String,
     category: { type: String, default: 'General' },

@@ -45,11 +45,21 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     
     const { month } = req.query;
-    if (month) {
-      const year = new Date().getFullYear();
-      const start = new Date(year, Number(month) - 1, 1);
-      const end = new Date(year, Number(month), 0);
-      filter.createdAt = { $gte: start, $lte: end };
+    if (month && typeof month === 'string') {
+      const [year, m] = month.split('-');
+      const startDate = new Date(Number(year), Number(m) - 1, 1);
+      const endDate = new Date(Number(year), Number(m), 0, 23, 59, 59, 999);
+      const now = new Date();
+      const isCurrent = startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
+
+      if (isCurrent) {
+        filter.$or = [
+          { status: 'WIP' },
+          { incomingDate: { $gte: startDate, $lte: endDate } }
+        ];
+      } else {
+        filter.incomingDate = { $gte: startDate, $lte: endDate };
+      }
     }
 
     if (date) {

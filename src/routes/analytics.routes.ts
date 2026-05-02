@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 
 const router = Router();
 
-const getDateFilter = (monthQuery: any) => {
+const getDateFilter = (monthQuery: any, defaultToPrevious = false) => {
   let startDate, endDate;
   if (monthQuery && typeof monthQuery === 'string') {
     const [year, month] = monthQuery.split('-');
@@ -16,23 +16,36 @@ const getDateFilter = (monthQuery: any) => {
     endDate = new Date(Number(year), Number(month), 0, 23, 59, 59, 999);
   } else {
     const now = new Date();
+    if (defaultToPrevious) {
+      now.setMonth(now.getMonth() - 1);
+    }
     startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   }
   return { startDate, endDate };
 };
 
-const getMongoDateFilter = (startDate: Date, endDate: Date) => ({
-  $or: [
-    { status: 'WIP' },
-    { status: 'Delivered', deliveredAt: { $gte: startDate, $lte: endDate } },
-    { status: { $nin: ['WIP', 'Delivered'] }, updatedAt: { $gte: startDate, $lte: endDate } }
-  ]
-});
+const isCurrentMonth = (startDate: Date) => {
+  const now = new Date();
+  return startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
+};
+
+const getMongoDateFilter = (startDate: Date, endDate: Date) => {
+  if (isCurrentMonth(startDate)) {
+    return {
+      $or: [
+        { status: 'WIP' },
+        { incomingDate: { $gte: startDate, $lte: endDate } }
+      ]
+    };
+  } else {
+    return { incomingDate: { $gte: startDate, $lte: endDate } };
+  }
+};
 
 router.get('/public', async (req, res: Response): Promise<void> => {
   try {
-    const { startDate, endDate } = getDateFilter(req.query.month);
+    const { startDate, endDate } = getDateFilter(req.query.month, true);
     const mongoFilter = getMongoDateFilter(startDate, endDate);
 
     const projectStats = await Project.aggregate([
@@ -40,7 +53,7 @@ router.get('/public', async (req, res: Response): Promise<void> => {
       { $group: { _id: null, totalProjects: { $sum: 1 }, totalRevenue: { $sum: { $multiply: ['$price', 0.8] } } } }
     ]);
     const topPerformers = await Project.aggregate([
-      { $match: { status: 'Delivered', deliveredAt: { $gte: startDate, $lte: endDate } } },
+      { $match: { status: 'Delivered', incomingDate: { $gte: startDate, $lte: endDate } } },
       { $addFields: { 
         memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
       }},
@@ -80,9 +93,8 @@ router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> =
     ]);
 
     const projects = allProjects.filter(p => {
-      if (p.status === 'WIP') return true;
-      if (p.status === 'Delivered') return p.deliveredAt && p.deliveredAt >= startDate && p.deliveredAt <= endDate;
-      return p.updatedAt >= startDate && p.updatedAt <= endDate;
+      if (isCurrentMonth(startDate) && p.status === 'WIP') return true;
+      return p.incomingDate >= startDate && p.incomingDate <= endDate;
     });
 
     const delivered = projects.filter(p => p.status === 'Delivered');
@@ -163,9 +175,8 @@ router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
     const allProjects = await Project.find({ assignedUsers: new mongoose.Types.ObjectId(userId) });
     
     const projects = allProjects.filter(p => {
-      if (p.status === 'WIP') return true;
-      if (p.status === 'Delivered') return p.deliveredAt && p.deliveredAt >= startDate && p.deliveredAt <= endDate;
-      return p.updatedAt >= startDate && p.updatedAt <= endDate;
+      if (isCurrentMonth(startDate) && p.status === 'WIP') return true;
+      return p.incomingDate >= startDate && p.incomingDate <= endDate;
     });
 
     const delivered = projects.filter(p => p.status === 'Delivered');
@@ -202,7 +213,7 @@ router.get('/leaderboard', async (req: AuthRequest, res: Response): Promise<void
   try {
     const { startDate, endDate } = getDateFilter(req.query.month);
     const leaderboard = await Project.aggregate([
-      { $match: { status: 'Delivered', deliveredAt: { $gte: startDate, $lte: endDate } } },
+      { $match: { status: 'Delivered', incomingDate: { $gte: startDate, $lte: endDate } } },
       { $addFields: { 
         memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
       }},
@@ -222,18 +233,24 @@ router.get('/leaderboard', async (req: AuthRequest, res: Response): Promise<void
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
-router.get('/projects/status', async (_req, res: Response): Promise<void> => {
+router.get('/projects/status', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const { startDate, endDate } = getDateFilter(req.query.month);
+    const mongoFilter = getMongoDateFilter(startDate, endDate);
     const data = await Project.aggregate([
+      { $match: mongoFilter },
       { $group: { _id: '$status', count: { $sum: 1 }, revenue: { $sum: { $multiply: ['$price', 0.8] } } } },
     ]);
     res.json(data);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
-router.get('/projects/profile', async (_req, res: Response): Promise<void> => {
+router.get('/projects/profile', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const { startDate, endDate } = getDateFilter(req.query.month);
+    const mongoFilter = getMongoDateFilter(startDate, endDate);
     const data = await Project.aggregate([
+      { $match: mongoFilter },
       { $group: {
         _id: '$profileName',
         count: { $sum: 1 },
@@ -293,9 +310,9 @@ router.get('/revenue/timeline', async (req, res: Response): Promise<void> => {
     const since = new Date();
     since.setMonth(since.getMonth() - Number(months));
     const data = await Project.aggregate([
-      { $match: { status: 'Delivered', deliveredAt: { $gte: since } } },
+      { $match: { status: 'Delivered', incomingDate: { $gte: since } } },
       { $group: {
-        _id: { year: { $year: '$deliveredAt' }, month: { $month: '$deliveredAt' } },
+        _id: { year: { $year: '$incomingDate' }, month: { $month: '$incomingDate' } },
         revenue: { $sum: { $multiply: ['$price', 0.8] } },
         count: { $sum: 1 },
       }},

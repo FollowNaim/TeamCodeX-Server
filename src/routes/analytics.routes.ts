@@ -9,19 +9,31 @@ import mongoose from 'mongoose';
 const router = Router();
 
 const getDateFilter = (monthQuery: any, defaultToPrevious = false) => {
-  let startDate, endDate;
-  if (monthQuery && typeof monthQuery === 'string') {
-    const [year, month] = monthQuery.split('-');
-    startDate = new Date(Number(year), Number(month) - 1, 1);
-    endDate = new Date(Number(year), Number(month), 0, 23, 59, 59, 999);
-  } else {
-    const now = new Date();
-    if (defaultToPrevious) {
-      now.setMonth(now.getMonth() - 1);
+  let startDate: Date, endDate: Date;
+  const now = new Date();
+  
+  try {
+    if (monthQuery && typeof monthQuery === 'string' && monthQuery.includes('-')) {
+      const [year, month] = monthQuery.split('-');
+      const y = parseInt(year);
+      const m = parseInt(month);
+      if (!isNaN(y) && !isNaN(m)) {
+        startDate = new Date(y, m - 1, 1);
+        endDate = new Date(y, m, 0, 23, 59, 59, 999);
+      } else {
+        throw new Error('Invalid date parts');
+      }
+    } else {
+      const target = new Date(now.getFullYear(), now.getMonth(), 1);
+      if (defaultToPrevious) target.setMonth(target.getMonth() - 1);
+      startDate = new Date(target.getFullYear(), target.getMonth(), 1);
+      endDate = new Date(target.getFullYear(), target.getMonth() + 1, 0, 23, 59, 59, 999);
     }
+  } catch (err) {
     startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   }
+  
   return { startDate, endDate };
 };
 
@@ -31,16 +43,15 @@ const isCurrentMonth = (startDate: Date) => {
 };
 
 const getMongoDateFilter = (startDate: Date, endDate: Date) => {
-  if (isCurrentMonth(startDate)) {
-    return {
-      $or: [
-        { status: 'WIP' },
-        { incomingDate: { $gte: startDate, $lte: endDate } }
-      ]
-    };
-  } else {
-    return { incomingDate: { $gte: startDate, $lte: endDate } };
-  }
+  const isCurrent = isCurrentMonth(startDate);
+  return {
+    $or: [
+      ...(isCurrent ? [{ status: 'WIP' }] : []),
+      { incomingDate: { $gte: startDate, $lte: endDate } },
+      { deliveredAt: { $gte: startDate, $lte: endDate } },
+      { updatedAt: { $gte: startDate, $lte: endDate }, status: { $in: ['Delivered', 'Cancelled'] } }
+    ]
+  };
 };
 
 router.get('/public', async (req, res: Response): Promise<void> => {
@@ -87,21 +98,38 @@ router.use(authenticate);
 router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { startDate, endDate } = getDateFilter(req.query.month);
-    const [allProjects, users] = await Promise.all([
-      Project.find(),
-      User.countDocuments({ isActive: true }),
-    ]);
+    const mongoFilter = getMongoDateFilter(startDate, endDate);
 
-    const projects = allProjects.filter(p => {
-      if (isCurrentMonth(startDate) && p.status === 'WIP') return true;
-      return p.incomingDate >= startDate && p.incomingDate <= endDate;
-    });
+    let projects: any[] = [];
+    try {
+      projects = await Project.find(mongoFilter).lean();
+    } catch (err) {
+      console.error('Project fetch error:', err);
+    }
+
+    let users = 0;
+    try {
+      users = await User.countDocuments({ isActive: true });
+      if (users === 0) {
+        // Fallback: count all users if isActive query fails or returns 0 unexpectedly
+        users = await User.countDocuments({});
+      }
+    } catch (err) {
+      console.error('User fetch error:', err);
+    }
 
     const delivered = projects.filter(p => p.status === 'Delivered');
-    const totalRevenue = delivered.reduce((s, p) => s + (p.price * 0.8), 0);
-    const avgDeliveryMs = delivered.filter(p => p.deliveredAt).reduce((s, p) => {
-      return s + (p.deliveredAt!.getTime() - p.createdAt.getTime());
-    }, 0) / (delivered.length || 1);
+    const totalRevenue = delivered.reduce((s, p) => s + ((p.price || 0) * 0.8), 0);
+    
+    let avgDeliveryMs = 0;
+    const deliveredWithDates = delivered.filter(p => p.deliveredAt && p.createdAt);
+    if (deliveredWithDates.length > 0) {
+      const totalMs = deliveredWithDates.reduce((s, p) => {
+        return s + (new Date(p.deliveredAt!).getTime() - new Date(p.createdAt).getTime());
+      }, 0);
+      avgDeliveryMs = totalMs / deliveredWithDates.length;
+    }
+
     const wipProjects = projects.filter(p => p.status === 'WIP');
     const totalWIPValue = wipProjects.reduce((s, p) => s + (p.deliveryAmount || 0), 0);
 
@@ -118,7 +146,10 @@ router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> =
         Cancelled: projects.filter(p => p.status === 'Cancelled').length,
       },
     });
-  } catch { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { 
+    console.error('Overview error:', err);
+    res.status(500).json({ error: 'Server error' }); 
+  }
 });
 
 router.get('/team-breakdown', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -126,29 +157,49 @@ router.get('/team-breakdown', async (req: AuthRequest, res: Response): Promise<v
     const { startDate, endDate } = getDateFilter(req.query.month);
     const mongoFilter = getMongoDateFilter(startDate, endDate);
 
-    const data = await Project.aggregate([
-      { $match: mongoFilter },
-      { $addFields: { 
-        memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
+    const data = await User.aggregate([
+      { $match: { isActive: true } },
+      { $lookup: {
+        from: 'projects',
+        let: { userId: '$_id' },
+        pipeline: [
+          { $match: {
+            $expr: { $in: ['$$userId', '$assignedUsers'] },
+            ...mongoFilter
+          }}
+        ],
+        as: 'userProjects'
       }},
-      { $unwind: '$assignedUsers' },
+      { $unwind: { path: '$userProjects', preserveNullAndEmptyArrays: true } },
+      { $addFields: {
+        memberCount: { $cond: [
+          { $and: [{ $ifNull: ['$userProjects.assignedUsers', false] }, { $gt: [{ $size: { $ifNull: ['$userProjects.assignedUsers', []] } }, 0] }] },
+          { $size: '$userProjects.assignedUsers' },
+          1
+        ]}
+      }},
       { $group: {
-        _id: { user: '$assignedUsers', status: '$status' },
-        count: { $sum: 1 },
+        _id: { user: '$_id', status: '$userProjects.status' },
+        name: { $first: '$name' },
+        avatar: { $first: '$avatar' },
+        email: { $first: '$email' },
+        count: { $sum: { $cond: [{ $ifNull: ['$userProjects', false] }, 1, 0] } },
         value: { $sum: { 
-          $divide: [
-            { $cond: [{ $eq: ['$status', 'WIP'] }, '$deliveryAmount', { $multiply: ['$price', 0.8] }] },
-            '$memberCount'
+          $cond: [
+            { $ifNull: ['$userProjects', false] },
+            { $divide: [
+              { $cond: [{ $eq: ['$userProjects.status', 'WIP'] }, { $ifNull: ['$userProjects.deliveryAmount', 0] }, { $multiply: [{ $ifNull: ['$userProjects.price', 0] }, 0.8] }] },
+              '$memberCount'
+            ]},
+            0
           ]
         }}
       }},
-      { $lookup: { from: 'users', localField: '_id.user', foreignField: '_id', as: 'user' } },
-      { $unwind: '$user' },
       { $group: {
         _id: '$_id.user',
-        name: { $first: '$user.name' },
-        avatar: { $first: '$user.avatar' },
-        email: { $first: '$user.email' },
+        name: { $first: '$name' },
+        avatar: { $first: '$avatar' },
+        email: { $first: '$email' },
         WIP: { $sum: { $cond: [{ $eq: ['$_id.status', 'WIP'] }, '$count', 0] } },
         WIPValue: { $sum: { $cond: [{ $eq: ['$_id.status', 'WIP'] }, '$value', 0] } },
         Delivered: { $sum: { $cond: [{ $eq: ['$_id.status', 'Delivered'] }, '$count', 0] } },
@@ -163,7 +214,10 @@ router.get('/team-breakdown', async (req: AuthRequest, res: Response): Promise<v
       { $sort: { total: -1 } }
     ]);
     res.json(data);
-  } catch { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { 
+    console.error(err);
+    res.status(500).json({ error: 'Server error' }); 
+  }
 });
 
 router.get('/me', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -213,7 +267,10 @@ router.get('/leaderboard', async (req: AuthRequest, res: Response): Promise<void
   try {
     const { startDate, endDate } = getDateFilter(req.query.month);
     const leaderboard = await Project.aggregate([
-      { $match: { status: 'Delivered', incomingDate: { $gte: startDate, $lte: endDate } } },
+      { $match: { 
+        status: 'Delivered', 
+        deliveredAt: { $gte: startDate, $lte: endDate } 
+      } },
       { $addFields: { 
         memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
       }},
@@ -267,30 +324,44 @@ router.get('/members/performance', async (req: AuthRequest, res: Response): Prom
     const { startDate, endDate } = getDateFilter(req.query.month);
     const mongoFilter = getMongoDateFilter(startDate, endDate);
 
-    const data = await Project.aggregate([
-      { $match: mongoFilter },
-      { $addFields: { 
-        memberCount: { $cond: [{ $gt: [{ $size: '$assignedUsers' }, 0] }, { $size: '$assignedUsers' }, 1] } 
+    const data = await User.aggregate([
+      { $match: { isActive: true } },
+      { $lookup: {
+        from: 'projects',
+        let: { userId: '$_id' },
+        pipeline: [
+          { $match: {
+            $expr: { $in: ['$$userId', '$assignedUsers'] },
+            ...mongoFilter
+          }}
+        ],
+        as: 'userProjects'
       }},
-      { $unwind: '$assignedUsers' },
+      { $unwind: { path: '$userProjects', preserveNullAndEmptyArrays: true } },
+      { $addFields: {
+        memberCount: { $cond: [
+          { $and: [{ $ifNull: ['$userProjects.assignedUsers', false] }, { $gt: [{ $size: { $ifNull: ['$userProjects.assignedUsers', []] } }, 0] }] },
+          { $size: '$userProjects.assignedUsers' },
+          1
+        ]}
+      }},
       { $group: {
-        _id: { user: '$assignedUsers', status: '$status' },
-        count: { $sum: 1 },
+        _id: { user: '$_id', status: '$userProjects.status' },
+        name: { $first: '$name' },
+        avatar: { $first: '$avatar' },
+        count: { $sum: { $cond: [{ $ifNull: ['$userProjects', false] }, 1, 0] } },
         revenue: { $sum: { 
-          $divide: [{ $multiply: ['$price', 0.8] }, '$memberCount']
+          $cond: [
+            { $ifNull: ['$userProjects', false] },
+            { $divide: [{ $multiply: [{ $ifNull: ['$userProjects.price', 0] }, 0.8] }, '$memberCount'] },
+            0
+          ]
         }}
       }},
-      { $lookup: {
-        from: 'users',
-        localField: '_id.user',
-        foreignField: '_id',
-        as: 'userDetails'
-      }},
-      { $unwind: '$userDetails' },
       { $group: {
         _id: '$_id.user',
-        name: { $first: '$userDetails.name' },
-        avatar: { $first: '$userDetails.avatar' },
+        name: { $first: '$name' },
+        avatar: { $first: '$avatar' },
         stats: { $push: { status: '$_id.status', count: '$count', revenue: '$revenue' } },
         totalProjects: { $sum: '$count' },
         totalRevenue: { $sum: '$revenue' }

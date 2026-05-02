@@ -33,33 +33,46 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       filter.assignedUsers = new mongoose.Types.ObjectId(assignedUsers as string);
     }
     
+    let searchOr: any[] | null = null;
     if (search) {
       const searchStr = search as string;
       const clientsFound = await Client.find({ name: { $regex: searchStr, $options: 'i' } }).select('_id');
       const clientIds = clientsFound.map(c => c._id);
-      filter.$or = [
+      searchOr = [
         { title: { $regex: searchStr, $options: 'i' } },
         { orderId: { $regex: searchStr, $options: 'i' } },
         { clientId: { $in: clientIds } }
       ];
     }
     
+    let monthOr: any[] | null = null;
     const { month } = req.query;
-    if (month && typeof month === 'string') {
+    if (month && typeof month === 'string' && month.includes('-')) {
       const [year, m] = month.split('-');
       const startDate = new Date(Number(year), Number(m) - 1, 1);
       const endDate = new Date(Number(year), Number(m), 0, 23, 59, 59, 999);
-      const now = new Date();
-      const isCurrent = startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
+      
+      if (!isNaN(startDate.getTime())) {
+        const now = new Date();
+        const isCurrent = startDate.getMonth() === now.getMonth() && startDate.getFullYear() === now.getFullYear();
 
-      if (isCurrent) {
-        filter.$or = [
-          { status: 'WIP' },
-          { incomingDate: { $gte: startDate, $lte: endDate } }
-        ];
-      } else {
-        filter.incomingDate = { $gte: startDate, $lte: endDate };
+        if (isCurrent) {
+          monthOr = [
+            { status: 'WIP' },
+            { incomingDate: { $gte: startDate, $lte: endDate } }
+          ];
+        } else {
+          filter.incomingDate = { $gte: startDate, $lte: endDate };
+        }
       }
+    }
+
+    if (searchOr && monthOr) {
+      filter.$and = [{ $or: searchOr }, { $or: monthOr }];
+    } else if (searchOr) {
+      filter.$or = searchOr;
+    } else if (monthOr) {
+      filter.$or = monthOr;
     }
 
     if (date) {
@@ -184,6 +197,24 @@ router.post('/import', authorize('team-lead', 'co-lead'), async (req: AuthReques
     res.status(201).json({ message: `Successfully imported ${imported.length} projects`, count: imported.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/planning
+router.get('/planning', authorize('team-lead', 'co-lead'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const projects = await Project.find({ 
+      status: { $in: ['WIP', 'Revision'] } 
+    })
+    .populate('clientId', 'name')
+    .populate('assignedUsers', 'name avatar')
+    .sort({ plannedDeliveryDate: 1, deadline: 1 })
+    .lean();
+    
+    res.json(projects);
+  } catch (err: any) { 
+    console.error('Planning Route Error:', err);
+    res.status(500).json({ error: 'Server error: ' + err.message }); 
   }
 });
 

@@ -35,6 +35,7 @@ export interface IProject extends Document {
   attachments: string[];
   createdBy: Types.ObjectId;
   deliveredAt?: Date;
+  plannedDeliveryDate?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -74,6 +75,7 @@ const projectSchema = new Schema<IProject>(
     attachments: [String],
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     deliveredAt: Date,
+    plannedDeliveryDate: Date,
   },
   { timestamps: true }
 );
